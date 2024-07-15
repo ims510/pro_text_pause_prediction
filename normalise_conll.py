@@ -3,6 +3,42 @@ import os
 
 nlp = stanza.Pipeline('fr', processors='tokenize, pos, lemma, depparse')
 
+def get_token_text_from_misc(misc):
+    misc = misc.split("|")
+    word = ""
+    for char_details in misc:
+        char_details = char_details.split("__")
+        char = char_details[1].split("=")[1]
+        word += char
+    return word
+
+def merge_elements(original_list, stanza_list):
+    new_list = []
+    min_len = min(len(original_list), len(stanza_list))
+    if min_len == len(original_list):
+        for i in range(min_len):
+            orig_misc = original_list[i][9]
+            stanza_misc = stanza_list[i][9]
+            if orig_misc == stanza_misc:
+                new_list.append(stanza_list[i])
+
+            else:
+                new_element = [stanza_list[i][0], original_list[i][1], stanza_list[i][2], stanza_list[i][3], stanza_list[i][4], stanza_list[i][5], stanza_list[i][6], stanza_list[i][7], stanza_list[i][8], orig_misc]
+                
+                new_list.append(new_element)
+    else:
+        for i in range(min_len):
+            orig_misc = original_list[i][9]
+            stanza_misc = stanza_list[i][9]
+            if orig_misc == stanza_misc:
+                new_list.append(stanza_list[i])
+
+            else:
+                new_element_1 = [int(original_list[i][0]), original_list[i][1], original_list[i][2], stanza_list[i][3], stanza_list[i][4], stanza_list[i][5], stanza_list[i][6], stanza_list[i][7], stanza_list[i][8], orig_misc]
+                new_element_2 = [int(original_list[i+1][0]), original_list[i+1][1], original_list[i+1][2], stanza_list[i][3], stanza_list[i][4], stanza_list[i][5], stanza_list[i][6], stanza_list[i][7], original_list[i+1][8], original_list[i+1][9]]
+                new_list.append(new_element_1)
+                new_list.append(new_element_2)
+    return new_list
 
 def create_new_conll(data, output_file):
     previous_text_version = 0
@@ -11,76 +47,125 @@ def create_new_conll(data, output_file):
         misc =""
         for i in range(len(data)):
             elements = [str(element) for element in data[i]]
-
-            concatenated_elements = "\n".join(elements)
-            data[i] = concatenated_elements
-            conll_sent = data[i].split("\n")
-
-            text_version = conll_sent [0] #literally: # text_version=0
-            text_version = int(text_version.split("=")[1])
-
-            sentence_id = conll_sent[1] #literally: # sentence_id=1
+            text_version = int(elements[0].split("=")[1]) #literally: # text_version=0
             sent_id = 1
 
             if text_version == previous_text_version and sent_id <= previous_sent_id:
                 sent_id = previous_sent_id + 1
-            sentence_complete = conll_sent[2:]
+
+            sentence_complete = elements[2:]
+
             sentence = ""
             original_tokens = []
+            list_elements = []
             for token in sentence_complete:
 
-                elements = token.split("\t")
-                item_dict = {'first_elements': tuple(elements[:10]), 'misc': elements[9]} if len(elements) > 1 else {'first_elements': tuple(elements), 'misc': ""}
+                conll_columns = token.split("\t")
+                list_elements.append(conll_columns)
+                item_dict = {'first_elements': tuple(conll_columns[:10]), 'misc': conll_columns[9]} if len(conll_columns) > 1 else {'first_elements': tuple(conll_columns), 'misc': ""}
                 original_tokens.append(item_dict)
+                
+                if len(conll_columns) > 1:
+                    sentence += conll_columns[1] + " "
 
-                if len(elements) > 1:
-                    sentence += elements[1] + " "
 
             doc = nlp(sentence)
+            stanza_nb_tokens = 0
             for j in range(len(doc.sentences)):
-                mini_sentence = ""
-                mini_sentence = " ".join([token.text for token in doc.sentences[j].words])
-                if j > 0:
-                    f.write("# text_version=")
-                    f.write(str(text_version))
-                    previous_text_version = text_version
-                    f.write("\n")
+                stanza_nb_tokens += len(doc.sentences[j].words)
+            list_stanza_elements = []
+            if stanza_nb_tokens != len(list_elements):
+                for j in range(len(doc.sentences)):
+                    for i in range(len(doc.sentences[j].words)):
+                        token = doc.sentences[j].words[i]
+                        
+                        xpos = token.xpos if not "None" else "_"
+                        deps = token.deps if not "None" else "_"
+                        if j == 0:
+                            id_to_check_against = token.id
+                        else:
+                            id_to_check_against = token.id + len(doc.sentences[j-1].words)
+                        for element in original_tokens:
+                            if element['first_elements'][1] == token.text and int(element['first_elements'][0]) == id_to_check_against:
+                                misc = element['misc']
+                                break
+                        list_stanza_elements.append([token.id, token.text, token.lemma, token.pos, xpos, token.feats, token.head, token.deprel, deps, misc])
+                new_list = merge_elements(list_elements, list_stanza_elements)
+                iterations = 0
+                for element in new_list:
+                    if element[0] == 1:
+                        mini_sentence = " ".join([token.text for token in doc.sentences[iterations].words])
+                        if iterations > 0:
+                            f.write("\n")
+                        f.write("# text_version=")
+                        f.write(str(text_version))
+                        previous_text_version = text_version
+                        f.write("\n")
 
-                    f.write("# sentence_id=")
-                    f.write(str(sent_id))
-                    previous_sent_id = sent_id
-                    sent_id += 1
-                    f.write("\n")
+                        f.write("# sentence_id=")
+                        f.write(str(sent_id))
+                        previous_sent_id = sent_id
+                        sent_id += 1
+                        f.write("\n")
 
-                    f.write(f"# text = {mini_sentence}")
-                    f.write("\n")
-                else:
-                    f.write("# text_version=")
-                    f.write(str(text_version))
-                    previous_text_version = text_version
-                    f.write("\n")
+                        f.write(f"# text = {mini_sentence}")
+                        f.write("\n")
 
-                    f.write("# sentence_id=")
-                    f.write(str(sent_id))
-                    previous_sent_id = sent_id
-                    sent_id += 1
+                        f.write(f"{element[0]}\t{element[1]}\t{element[2]}\t{element[3]}\t{element[4]}\t{element[5]}\t{element[6]}\t{element[7]}\t{element[8]}\t{element[9]}\n")
+                        iterations += 1
+                    else:
+                        f.write(f"{element[0]}\t{element[1]}\t{element[2]}\t{element[3]}\t{element[4]}\t{element[5]}\t{element[6]}\t{element[7]}\t{element[8]}\t{element[9]}\n")
+            else:
+                nb_words_in_sentence = []
+                for j in range(len(doc.sentences)):
+                    nb_words_in_sentence.append(len(doc.sentences[j].words))
+                    mini_sentence = ""
+                    mini_sentence = " ".join([token.text for token in doc.sentences[j].words])
+                    if j > 0:
+                        f.write("# text_version=")
+                        f.write(str(text_version))
+                        previous_text_version = text_version
+                        f.write("\n")
+
+                        f.write("# sentence_id=")
+                        f.write(str(sent_id))
+                        previous_sent_id = sent_id
+                        sent_id += 1
+                        f.write("\n")
+
+                        f.write(f"# text = {mini_sentence}")
+                        f.write("\n")
+                    else:
+                        f.write("# text_version=")
+                        f.write(str(text_version))
+                        previous_text_version = text_version
+                        f.write("\n")
+
+                        f.write("# sentence_id=")
+                        f.write(str(sent_id))
+                        previous_sent_id = sent_id
+                        sent_id += 1
+                        f.write("\n")
+
+                        f.write(f"# text = {mini_sentence}")
+                        f.write("\n")
+                    for i in range(len(doc.sentences[j].words)):
+                        token = doc.sentences[j].words[i]
+
+                        xpos = token.xpos if not "None" else "_"
+                        deps = token.deps if not "None" else "_"
+                        if j == 0:
+                            id_to_check_against = token.id
+                        else:
+                            id_to_check_against = token.id + sum(nb_words_in_sentence[:j])                    
+
+                        for element in original_tokens:
+
+                            if element['first_elements'][1] == token.text and int(element['first_elements'][0]) == id_to_check_against:
+                                misc = element['misc']
+                                break   
+                        f.write(f"{token.id}\t{token.text}\t{token.lemma}\t{token.pos}\t{xpos}\t{token.feats}\t{token.head}\t{token.deprel}\t{deps}\t{misc}\n")
                     f.write("\n")
-
-                    f.write(f"# text = {mini_sentence}")
-                    f.write("\n")
-                for i in range(len(doc.sentences[j].words)):
-                    token = doc.sentences[j].words[i]
-
-                    xpos = token.xpos if not "None" else "_"
-                    deps = token.deps if not "None" else "_"
-                    for element in original_tokens:
-                        if element['first_elements'][1] == token.text and int(element['first_elements'][0]) == token.id:
-                            misc = element['misc']
-                            break   
-                    f.write(f"{token.id}\t{token.text}\t{token.lemma}\t{token.pos}\t{xpos}\t{token.feats}\t{token.head}\t{token.deprel}\t{deps}\t{misc}\n")
-                f.write("\n")
-
-    print(f"File {output_file} created.")
 
 def extract_data(file):
     data_file = open(file, "r")
