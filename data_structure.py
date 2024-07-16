@@ -16,7 +16,7 @@ class Character:
         char_id_list = [field.split('=')[1] for field in fields if field.startswith('charID')]
         pause_value_list = [field.split('=')[1] for field in fields if field.startswith('pause')]
         char_status = [field.split('=')[1] for field in fields if field.startswith('charStatus')]
-        char = [field.split('=')[1] for field in fields if field.startswith('char=')]
+        char = [field[-1] for field in fields if field.startswith('char=')]
         if char_id_list and pause_value_list and char_status and char:
             char_id = int(char_id_list[0])
             pause_value = pause_value_list[0]
@@ -88,13 +88,8 @@ class Sentence:
         else:
             raise ValueError("No # text in sentence")
         tokens = []
-        for line in lines[4:]:
+        for line in lines[3:]:
             token = Token.from_string(line)
             tokens.append(token)
         tokens[-1].chars[-1].end_of_sentence = True
         return cls(text_version, sentence_id, text, tokens)
-
-
-
-
-    
