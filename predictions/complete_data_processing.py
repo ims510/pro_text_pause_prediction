@@ -4,7 +4,7 @@ from gensim.models import Word2Vec
 import numpy as np
 from scipy.stats import iqr
 
-csv_file = "/Users/madalina/Documents/M1TAL/stage_GC/pro_text/predictions/all_tagged-4.csv"
+csv_file = "/Users/madalina/Documents/M1TAL/stage_GC/pro_text/predictions/all_tagged.csv"
 # csv_file = "/Users/madalina/Documents/M1TAL/stage_GC/pro_text/predictions/vectorised_data.csv"
 
 def process_row(row, data):
@@ -255,6 +255,7 @@ def remove_long_pauses(df):
     print(f"Lower bound: {lower_bound}, Upper bound: {upper_bound}")
     # remove the line in the datafram if pause is longer than 1.5 * iqr_value
     df = df[df["pauseDur"] <= upper_bound]
+    df = df.reset_index(drop=True)
     return df
 
 def main():
@@ -265,15 +266,11 @@ def main():
             features = extract_features(people[person][burst_id])
             dataset.append(features)
     df = pd.DataFrame(dataset)
-    # print(df.head())
     df = remove_long_pauses(df)
 
     vectorise_text(df)
     # df.to_csv('vectorised_data.csv')
-    # with pd.option_context('display.max_rows', None, 'display.max_columns', None):
-    #     print(df['charBursts'])
     df_expanded = expand_columns(df)
-    # # df_expanded["frequency_0"].to_csv('frequency_0.csv')
     df_expanded.to_pickle('expanded_data.pkl')
     return df_expanded
             
