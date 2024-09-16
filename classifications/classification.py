@@ -1,12 +1,10 @@
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import KBinsDiscretizer
-from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
-import tensorflow as tf
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay, accuracy_score
 import matplotlib.pyplot as plt
-
+import tensorflow as tf
 def clean_df(df):
     columns_to_drop = (
         list(df.filter(like='vectors_pos').columns) +
@@ -64,33 +62,24 @@ def main():
         if i < len(disc.bin_edges_[0]) - 1:
             print(f"Bin {i}: {edge} to {disc.bin_edges_[0][i + 1]}")
     
-        # Build the neural network model
-    model = Sequential()
-    model.add(Dense(64, input_dim=X_train.shape[1], activation='relu'))
-    model.add(Dense(32, activation='relu'))
-    model.add(Dense(10, activation='softmax'))  # 10 output classes
-
-    # Compile the model
-    model.compile(loss='sparse_categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
+     # Build the Random Forest model
+    model = RandomForestClassifier(n_estimators=100, random_state=42)
 
     # Train the model
-    model.fit(X_train, y_train, epochs=20, batch_size=32, validation_split=0.2)
-
-    # Evaluate the model
-    loss, accuracy = model.evaluate(X_test, y_test)
-    print(f"Test Loss: {loss}")
-    print(f"Test Accuracy: {accuracy}")
+    model.fit(X_train, y_train)
 
     # Make predictions
     y_pred = model.predict(X_test)
-    y_pred_classes = y_pred.argmax(axis=1)
+
+    # Evaluate the model
+    accuracy = accuracy_score(y_test, y_pred)
+    print(f"Test Accuracy: {accuracy}")
 
     # Print confusion matrix
-    cm = confusion_matrix(y_test, y_pred_classes)
+    cm = confusion_matrix(y_test, y_pred)
     disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=range(10))
     disp.plot(cmap=plt.cm.Blues)
     plt.show()
-
 
 if __name__ == '__main__':
     main()
