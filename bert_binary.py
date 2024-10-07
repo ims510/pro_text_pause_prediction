@@ -3,7 +3,7 @@ import random
 import torch
 import pandas as pd
 from transformers import CamembertTokenizerFast, CamembertForTokenClassification, Trainer, TrainingArguments
-from datasets import Dataset, load
+from datasets import Dataset, load, concatenate_datasets
 import evaluate
 import os
 from torch.nn import CrossEntropyLoss
@@ -91,10 +91,39 @@ def get_texts(directory):
 texts = get_texts("/Users/madalina/Documents/M1TAL/stage_GC/fichiersavecpausescat")
 print(texts)
 
-# Prepare dataset
 tokenizer = CamembertTokenizerFast.from_pretrained('camembert-base')
 train_dataset = prepare_training_data(texts)
 print("Dataset:", train_dataset)
+
+def balance_dataset(train_dataset, oversample_factor=2, undersample_factor=2):
+    pause_sequences = []
+    no_pause_sequences = []
+    
+    for i in range(len(train_dataset)):
+        if 1 in train_dataset[i]['labels']:  # Sequence contains at least one "pause" token
+            pause_sequences.append(train_dataset[i])
+        else:
+            no_pause_sequences.append(train_dataset[i])
+
+    # Oversample pause sequences
+    oversampled_pause_sequences = pause_sequences * oversample_factor
+
+    # Undersample no-pause sequences
+    no_pause_sample_size = min(len(no_pause_sequences), len(pause_sequences) * undersample_factor)
+    no_pause_sequences_balanced = random.sample(no_pause_sequences, k=no_pause_sample_size)
+
+    # Combine into balanced dataset
+    balanced_dataset = concatenate_datasets([
+        Dataset.from_list(oversampled_pause_sequences + no_pause_sequences_balanced)
+    ])
+
+    return balanced_dataset
+
+
+# Apply combined oversampling and undersampling
+train_dataset = balance_dataset(train_dataset)
+
+# Prepare dataset
 # Split the dataset into train and eval 
 train_size = int(0.8 * len(train_dataset))  # 80% for training
 eval_size = len(train_dataset) - train_size  # 20% for evaluation
@@ -113,7 +142,8 @@ training_args = TrainingArguments(
     save_total_limit=2,              # Only keep last 2 checkpoints
     per_device_train_batch_size=8,   # Adjust batch size for your GPU memory
     per_device_eval_batch_size=8,
-    num_train_epochs=3,              # Number of epochs
+    num_train_epochs=20,              # Number of epochs
+    learning_rate=2e-5,              # Learning rate
     weight_decay=0.01,               # Strength of weight decay
     logging_dir='./logs',            # Logging directory
     logging_steps=10,                # Log every 10 steps
@@ -244,3 +274,23 @@ print("\nDetailed Evaluation Predictions:")
 accuracy = evaluate_model(eval_dataset)
 print("\nEvaluation Accuracy:", accuracy)
 
+import pickle
+import torch
+
+# Save the model
+torch.save(model.state_dict(), 'model.pth')
+
+# Save the tokenizer
+with open('tokenizer.pkl', 'wb') as f:
+    pickle.dump(tokenizer, f)
+
+# Save datasets
+with open('train_dataset.pkl', 'wb') as f:
+    pickle.dump(train_dataset, f)
+
+with open('eval_dataset.pkl', 'wb') as f:
+    pickle.dump(eval_dataset, f)
+
+# Save trainer logs for metrics
+with open('trainer_logs.pkl', 'wb') as f:
+    pickle.dump(trainer.state.log_history, f)
