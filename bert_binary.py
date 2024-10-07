@@ -6,6 +6,7 @@ from transformers import CamembertTokenizerFast, CamembertForTokenClassification
 from datasets import Dataset, load
 import evaluate
 import os
+from torch.nn import CrossEntropyLoss
 
 # Function to manually tokenize the text
 def manual_tokenize(text):
@@ -120,15 +121,27 @@ training_args = TrainingArguments(
     no_cuda=True                    # for MAC users    
 )
 
+pause_count = sum(label == 1 for label_seq in train_dataset['labels'] for label in label_seq if label != -100)
+no_pause_count = sum(label == 0 for label_seq in train_dataset['labels'] for label in label_seq if label != -100)
+print(f"Pause count: {pause_count}, No pause count: {no_pause_count}")
+total = pause_count + no_pause_count
+class_weights = torch.tensor([total / no_pause_count, total / pause_count]).float()
 
-# Initialize the Trainer
-trainer = Trainer(
-    model=model,                         # The pre-trained model
-    args=training_args,                  # Training arguments
-    train_dataset=train_dataset,         # Your training dataset
-    eval_dataset=eval_dataset            # Your evaluation dataset
+class CustomTrainer(Trainer):
+    def compute_loss(self, model, inputs, return_outputs=False):
+        labels = inputs.pop("labels")
+        outputs = model(**inputs)
+        logits = outputs.logits
+        loss_fn = CrossEntropyLoss(weight=class_weights)
+        loss = loss_fn(logits.view(-1, model.config.num_labels), labels.view(-1))
+        return (loss, outputs) if return_outputs else loss
+
+trainer = CustomTrainer(
+    model=model,
+    args=training_args,
+    train_dataset=train_dataset,
+    eval_dataset=eval_dataset
 )
-
 # Train the model
 trainer.train()
 
@@ -159,6 +172,11 @@ def evaluate_model(eval_dataset):
     all_predictions = []
     all_labels = []
     
+    pause_correct = 0
+    pause_total = 0
+    no_pause_correct = 0
+    no_pause_total = 0
+    
     for batch in eval_dataset:
         inputs = {k: torch.tensor(v).unsqueeze(0) for k, v in batch.items() if k != 'labels'}
         labels = torch.tensor(batch['labels']).unsqueeze(0)
@@ -172,16 +190,47 @@ def evaluate_model(eval_dataset):
         predictions = predictions.view(-1)
         labels = labels.view(-1)
         
-        # Filter out ⁠ -100 ⁠ labels
+        # Filter out ⁠-100 ⁠ labels
         mask = labels != -100
         filtered_predictions = predictions[mask]
         filtered_labels = labels[mask]
         
-        all_predictions.extend(filtered_predictions.tolist())
-        all_labels.extend(filtered_labels.tolist())
+        # Convert predictions and labels back to text
+        input_ids = inputs['input_ids'].squeeze().tolist()
+        decoded_tokens = tokenizer.convert_ids_to_tokens(input_ids, skip_special_tokens=True)
+        
+        # Ensure the length of decoded_tokens matches the mask
+        mask_length = mask.sum().item()  # Count number of valid labels
+        decoded_tokens = decoded_tokens[:mask_length]  # Truncate decoded tokens to mask length
+        
+        # Calculate correct predictions for each category
+        for pred_label, true_label in zip(filtered_predictions.tolist(), filtered_labels.tolist()):
+            if true_label == 1:  # If the true label is "pause"
+                pause_total += 1
+                if pred_label == 1:
+                    pause_correct += 1
+            elif true_label == 0:  # If the true label is "no pause"
+                no_pause_total += 1
+                if pred_label == 0:
+                    no_pause_correct += 1
     
-    # Compute accuracy
-    return metric.compute(predictions=all_predictions, references=all_labels)
+    # Calculate accuracy for each category
+    pause_accuracy = (pause_correct / pause_total) if pause_total > 0 else 0
+    no_pause_accuracy = (no_pause_correct / no_pause_total) if no_pause_total > 0 else 0
+    
+    print(f"Accuracy for 'pause': {pause_accuracy:.2f}")
+    print(f"Accuracy for 'no pause': {no_pause_accuracy:.2f}")
+    
+    # Compute and return overall accuracy
+    overall_accuracy = metric.compute(predictions=all_predictions, references=all_labels)
+    return {
+        "pause_accuracy": pause_accuracy,
+        "no_pause_accuracy": no_pause_accuracy,
+        "overall_accuracy": overall_accuracy
+    }
+
+
+
 
 # Example prediction
 example_text = "L'intention de l cat_5 'aéroport de biard cat_4 diminuer la poussé des gaz cat_1 sur le décollage de ses avions."
@@ -190,6 +239,8 @@ print("Predictions for example text:")
 for token, label in predictions:
     print(f"Token: {token}, Predicted: {label}")
 
-# Evaluate the model
+# Evaluate the model and print detailed token predictions
+print("\nDetailed Evaluation Predictions:")
 accuracy = evaluate_model(eval_dataset)
-print("Evaluation Accuracy:", accuracy)
+print("\nEvaluation Accuracy:", accuracy)
+
