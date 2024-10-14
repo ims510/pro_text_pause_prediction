@@ -127,10 +127,14 @@ def balance_dataset(train_dataset, oversample_factor=2, undersample_factor=2):
 train_dataset = balance_dataset(train_dataset)
 
 # Prepare dataset
-train_size = int(0.8 * len(train_dataset))  # 80% for training
-eval_size = len(train_dataset) - train_size  # 20% for evaluation
+train_size = 0.8
+val_test_size = 0.2  # Remaining 20% split into validation and test
 
-train_dataset, eval_dataset = train_dataset.train_test_split(test_size=0.2).values()
+# First, split the dataset into train and remaining (validation + test)
+train_dataset, remaining_dataset = train_dataset.train_test_split(test_size=val_test_size).values()
+
+# Now split the remaining dataset into validation and test (50% each from remaining 20%)
+validation_dataset, test_dataset = remaining_dataset.train_test_split(test_size=0.5).values()
 
 # Load pre-trained Camembert for token classification with 2 labels (binary)
 model = CamembertForTokenClassification.from_pretrained('camembert-base', num_labels=2)
@@ -172,7 +176,7 @@ trainer = CustomTrainer(
     model=model,
     args=training_args,
     train_dataset=train_dataset,
-    eval_dataset=eval_dataset
+    eval_dataset=validation_dataset
 )
 
 # Train the model
@@ -230,67 +234,67 @@ def evaluate_model(eval_dataset):
     print(f"Accuracy for 'no pause': {no_pause_accuracy:.2f}")
 
 
-accuracy = evaluate_model(eval_dataset)
+accuracy = evaluate_model(test_dataset)
 
 
-def display_text_transformations(example_text, model, tokenizer):
-    # 1. Print the original text
-    print("Original Text:")
-    print(example_text)
+# def display_text_transformations(example_text, model, tokenizer):
+#     # 1. Print the original text
+#     print("Original Text:")
+#     print(example_text)
     
-    # 2. Replace words with POS tags
-    pos_tags = get_pos_tags(example_text)
-    print("\nText with POS Tags:")
-    print(" ".join(pos_tags))
+#     # 2. Replace words with POS tags
+#     pos_tags = get_pos_tags(example_text)
+#     print("\nText with POS Tags:")
+#     print(" ".join(pos_tags))
     
-    # 3. Get model predictions
-    tokens = tokenizer(pos_tags, is_split_into_words=True, padding="max_length", max_length=128, truncation=True, return_tensors="pt")
+#     # 3. Get model predictions
+#     tokens = tokenizer(pos_tags, is_split_into_words=True, padding="max_length", max_length=128, truncation=True, return_tensors="pt")
 
-    model.eval()
-    with torch.no_grad():
-        outputs = model(**tokens)
+#     model.eval()
+#     with torch.no_grad():
+#         outputs = model(**tokens)
 
-    predictions = torch.argmax(outputs.logits, dim=-1).squeeze().tolist()
-    decoded_tokens = tokenizer.convert_ids_to_tokens(tokens['input_ids'].squeeze(), skip_special_tokens=True)
-    prediction_labels = ["pause" if p == 1 else "no pause" for p in predictions]
+#     predictions = torch.argmax(outputs.logits, dim=-1).squeeze().tolist()
+#     decoded_tokens = tokenizer.convert_ids_to_tokens(tokens['input_ids'].squeeze(), skip_special_tokens=True)
+#     prediction_labels = ["pause" if p == 1 else "no pause" for p in predictions]
 
-    print("\nPredictions:")
-    for token, pos_tag, prediction in zip(decoded_tokens, pos_tags, prediction_labels):
-        print(f"{token} ({pos_tag}): {prediction}")
+#     print("\nPredictions:")
+#     for token, pos_tag, prediction in zip(decoded_tokens, pos_tags, prediction_labels):
+#         print(f"{token} ({pos_tag}): {prediction}")
 
-sample_text = "Cependant, cat_4  pour les personnes ne voyant tout d'abord aucun avantage personnel cat_4 , ne trouve cat_1 nt aucune satisfaction  cat_5 dans celle-ci. Ainsi, cela peut entrainer un sentiment de rejet et d'incompréhension. cat_5 "
-display_text_transformations(sample_text, model, tokenizer)
+# sample_text = "Cependant, cat_4  pour les personnes ne voyant tout d'abord aucun avantage personnel cat_4 , ne trouve cat_1 nt aucune satisfaction  cat_5 dans celle-ci. Ainsi, cela peut entrainer un sentiment de rejet et d'incompréhension. cat_5 "
+# display_text_transformations(sample_text, model, tokenizer)
 
-from sklearn.metrics import classification_report
+# from sklearn.metrics import classification_report
 
-# Function to compute evaluation metrics
-def compute_metrics(eval_dataset, model, tokenizer):
-    true_labels = []
-    pred_labels = []
+# # Function to compute evaluation metrics
+# def compute_metrics(eval_dataset, model, tokenizer):
+#     true_labels = []
+#     pred_labels = []
 
-    model.eval()
+#     model.eval()
 
-    for batch in eval_dataset:
-        inputs = {k: torch.tensor(v).unsqueeze(0) for k, v in batch.items() if k != 'labels'}
-        labels = torch.tensor(batch['labels']).unsqueeze(0)
+#     for batch in eval_dataset:
+#         inputs = {k: torch.tensor(v).unsqueeze(0) for k, v in batch.items() if k != 'labels'}
+#         labels = torch.tensor(batch['labels']).unsqueeze(0)
 
-        with torch.no_grad():
-            outputs = model(**inputs)
+#         with torch.no_grad():
+#             outputs = model(**inputs)
 
-        predictions = torch.argmax(outputs.logits, dim=-1).view(-1)
-        labels = labels.view(-1)
+#         predictions = torch.argmax(outputs.logits, dim=-1).view(-1)
+#         labels = labels.view(-1)
 
-        # Filter out padding labels (-100)
-        mask = labels != -100
-        filtered_predictions = predictions[mask]
-        filtered_labels = labels[mask]
+#         # Filter out padding labels (-100)
+#         mask = labels != -100
+#         filtered_predictions = predictions[mask]
+#         filtered_labels = labels[mask]
 
-        pred_labels.extend(filtered_predictions.tolist())
-        true_labels.extend(filtered_labels.tolist())
+#         pred_labels.extend(filtered_predictions.tolist())
+#         true_labels.extend(filtered_labels.tolist())
 
-    # Print classification report
-    report = classification_report(true_labels, pred_labels, target_names=['no pause', 'pause'], digits=4)
-    print(report)
-    return report
+#     # Print classification report
+#     report = classification_report(true_labels, pred_labels, target_names=['no pause', 'pause'], digits=4)
+#     print(report)
+#     return report
 
-metrics_report = compute_metrics(eval_dataset, model, tokenizer)
+# metrics_report = compute_metrics(eval_dataset, model, tokenizer)
