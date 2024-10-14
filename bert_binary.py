@@ -125,10 +125,20 @@ train_dataset = balance_dataset(train_dataset)
 
 # Prepare dataset
 # Split the dataset into train and eval 
-train_size = int(0.8 * len(train_dataset))  # 80% for training
-eval_size = len(train_dataset) - train_size  # 20% for evaluation
+# Split the dataset into train (80%), validation (10%), and test (10%)
+train_size = 0.8
+val_test_size = 0.2  # Remaining 20% split into validation and test
 
-train_dataset, eval_dataset = train_dataset.train_test_split(test_size=0.2).values()
+# First, split the dataset into train and remaining (validation + test)
+train_dataset, remaining_dataset = train_dataset.train_test_split(test_size=val_test_size).values()
+
+# Now split the remaining dataset into validation and test (50% each from remaining 20%)
+validation_dataset, test_dataset = remaining_dataset.train_test_split(test_size=0.5).values()
+
+# Print out the sizes for confirmation
+print(f"Train dataset size: {len(train_dataset)}")
+print(f"Validation dataset size: {len(validation_dataset)}")
+print(f"Test dataset size: {len(test_dataset)}")
 
 
 # Load pre-trained Camembert for token classification with 2 labels (binary)
@@ -170,7 +180,7 @@ trainer = CustomTrainer(
     model=model,
     args=training_args,
     train_dataset=train_dataset,
-    eval_dataset=eval_dataset
+    eval_dataset=validation_dataset
 )
 # Train the model
 trainer.train()
@@ -262,35 +272,37 @@ def evaluate_model(eval_dataset):
 
 
 
-# Example prediction
-example_text = "L'intention de l cat_5 'aéroport de biard cat_4 diminuer la poussé des gaz cat_1 sur le décollage de ses avions."
-predictions = predict_pause(example_text)
-print("Predictions for example text:")
-for token, label in predictions:
-    print(f"Token: {token}, Predicted: {label}")
+
 
 # Evaluate the model and print detailed token predictions
 print("\nDetailed Evaluation Predictions:")
-accuracy = evaluate_model(eval_dataset)
+accuracy = evaluate_model(test_dataset)
 print("\nEvaluation Accuracy:", accuracy)
 
-import pickle
-import torch
+# import pickle
+# import torch
 
-# Save the model
-torch.save(model.state_dict(), 'model.pth')
+# # Save the model
+# torch.save(model.state_dict(), 'model.pth')
 
-# Save the tokenizer
-with open('tokenizer.pkl', 'wb') as f:
-    pickle.dump(tokenizer, f)
+# # Save the tokenizer
+# with open('tokenizer.pkl', 'wb') as f:
+#     pickle.dump(tokenizer, f)
 
-# Save datasets
-with open('train_dataset.pkl', 'wb') as f:
-    pickle.dump(train_dataset, f)
+# # Save datasets
+# with open('train_dataset.pkl', 'wb') as f:
+#     pickle.dump(train_dataset, f)
 
-with open('eval_dataset.pkl', 'wb') as f:
-    pickle.dump(eval_dataset, f)
+# with open('eval_dataset.pkl', 'wb') as f:
+#     pickle.dump(eval_dataset, f)
 
-# Save trainer logs for metrics
-with open('trainer_logs.pkl', 'wb') as f:
-    pickle.dump(trainer.state.log_history, f)
+# # Save trainer logs for metrics
+# with open('trainer_logs.pkl', 'wb') as f:
+#     pickle.dump(trainer.state.log_history, f)
+
+# # Example prediction
+# example_text = "L'intention de l cat_5 'aéroport de biard cat_4 diminuer la poussé des gaz cat_1 sur le décollage de ses avions."
+# predictions = predict_pause(example_text)
+# print("Predictions for example text:")
+# for token, label in predictions:
+#     print(f"Token: {token}, Predicted: {label}")
