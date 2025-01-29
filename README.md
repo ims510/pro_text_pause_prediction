@@ -142,4 +142,4 @@ This work as produced as part of a 3 month internship, during which results for 
 5. Part of speech integration and randomising pause distribution: `presentations/5_pos_integration.pdf`
 6. Regression using CamemBERT embeddings, statistical data adjustments, RoBERTa and LLM testing: `presentations/6_roberta_llm.pdf`
 
-Two publications were also written during this internship, both in the `publications` directory on this repository.
+Another publications was also written during this internship and submitted to the AMLA2024 conference in Miami - however the conference got pushed to another date. This along with the poster quoted before are both in the `publications` directory on this repository.
